@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>GRID-EMS</string>
+	<string>GRID-EMS</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,6 +22,23 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Mandatory iOS 14+ Local Network Discovery & Bonjour Permissions for Local GRID-EMS -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>GRID-EMS uses your local Wi-Fi network to automatically discover and connect to your home GRID-EMS energy controller with zero latency.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+		<string>_https._tcp</string>
+		<string>_gems._tcp</string>
+	</array>
+	<!-- App Transport Security: Allow local LAN HTTP/Self-Signed TLS and Cloud HTTPS -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

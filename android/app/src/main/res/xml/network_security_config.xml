@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow HTTP cleartext & local CA on local LAN / mDNS for direct Raspberry Pi GRID-EMS access -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Enforce strict HTTPS for central cloud server GRID-EMS-SERVER -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">ems.newenergygrid.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

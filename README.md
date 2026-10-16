@@ -1,43 +1,109 @@
-# GRID-EMS-APP (iOS & Android Mobile Companion)
+# GRID-EMS-APP — iOS & Android Mobile Companion
 
-Cross-platform mobile application (**Capacitor + Vue 3 + TypeScript + Tailwind CSS**) for **GRID-EMS** (Local Edge Controller) and **GRID-EMS-SERVER** (`https://ems.newenergygrid.com`), built for **New Energy Grid** and **The Charge Grid**.
-
----
-
-## Core Smart Routing & Onboarding Capabilities
-
-1. **At Home — Local LAN Zero-Latency Mode (`LOCAL_ONLINE`)**
-   - Automatically probes the local network for `GRID-EMS` via saved LAN IP, mDNS (`gems.local` / `grid-ems.local`), or subnet scan on port `8080`.
-   - Connects directly to the local `GRID-EMS` unit (`GET /api/system/info`, `GET /api/cloud/status`) for instant local telemetry and hardware control (**Raedian** EV wallbox modes & **Solis** battery storage optimization modes).
-   - **Automatic Cloud Check:** If the local `GRID-EMS` is not connected to `GRID-EMS-SERVER` yet (`enabled: false`), displays a prominent onboarding banner proposing to **Create a Cloud Account & Pair in 1 Tap** (`POST /api/cloud/pair`).
-
-2. **Away from Home — Automatic Cloud Failover (`CLOUD_ONLINE`)**
-   - When the local `GRID-EMS` is unreachable (cellular / external Wi-Fi) and the unit is paired with the cloud, the app automatically switches to **GRID-EMS-SERVER** (`https://ems.newenergygrid.com/client/dashboard` or white-label tenant portal `https://ems.newenergygrid.com/<tenant>/dashboard`).
-
-3. **Away from Home & EMS Not Connected to Cloud Yet (`AWAY_UNPAIRED`)**
-   - Displays a dedicated **Cloud Account Proposal & Onboarding Wizard**:
-     1. Pre-registers the hardware `pairing_token` and `serial_number` on `GRID-EMS-SERVER` (`POST /api/v1/device/register`) and opens `/register?pairing_token=...`.
-     2. Queues **Deferred Auto-Pairing**: the moment the user's phone reconnects to their home Wi-Fi and detects the local `GRID-EMS`, the app automatically executes `POST /api/cloud/pair` to link the local unit to their new cloud account.
+Official cross-platform mobile companion application (**iOS** & **Android**) for **GRID-EMS** (Local Edge Energy Management System) and **GRID-EMS-SERVER** (`https://ems.newenergygrid.com`), engineered by **New Energy Grid** and **The Charge Grid**.
 
 ---
 
-## Development & Native Build Commands
+## 📦 Download Latest Release (`v1.0.0`)
+
+Pre-built installation packages for Android and iOS are published on the [**GitHub Releases**](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest) page:
+
+| Platform | Release Asset | Description |
+| :--- | :--- | :--- |
+| **Android (8.0+)** | [`GRID-EMS-v1.0.0-android.apk`](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest/download/GRID-EMS-v1.0.0-android.apk) | Ready-to-install Android APK package with local mDNS/LAN discovery and cloud failover |
+| **iOS (15.0+)** | [`GRID-EMS-v1.0.0-ios.ipa`](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest/download/GRID-EMS-v1.0.0-ios.ipa) | Unsigned ARM64 iOS `.ipa` application bundle for sideloading (AltStore / Sideloadly / Apple Configurator 2) or enterprise/developer signing |
+| **iOS (Xcode)** | [`GRID-EMS-v1.0.0-ios-xcode.zip`](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest/download/GRID-EMS-v1.0.0-ios-xcode.zip) | Complete pre-synced Xcode project archive (`ios/App/App.xcworkspace`) ready to sign and run on any iPhone or iPad |
+| **Checksums** | [`SHA256SUMS`](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest/download/SHA256SUMS) | SHA-256 cryptographic checksums for all release artifacts |
+
+---
+
+## 🧭 Smart Local & Cloud Routing Architecture
+
+`GRID-EMS-APP` automatically detects whether the user is **at home** on their local Wi-Fi network or **away from home** on cellular/external Wi-Fi, and adapts its behavior based on whether the `GRID-EMS` edge controller is already paired with `GRID-EMS-SERVER`:
+
+```mermaid
+flowchart TD
+    Launch["📱 App Launch / Network Change"] --> Probe["Probe Local Home Network<br/>(Saved LAN IP, gems.local mDNS, Port 8080)"]
+    Probe -->|"Reachable (< 1.5s)"| Home["🟢 AT HOME: Open Local GRID-EMS<br/>(Zero-Latency LAN Telemetry & Hardware Control)"]
+    Probe -->|"Unreachable / Timeout"| AwayCheck{"Is EMS Paired<br/>with Cloud?"}
+
+    Home --> HomeCloudCheck{"GET /api/cloud/status<br/>Cloud Enabled?"}
+    HomeCloudCheck -->|"Yes (Online)"| Synced["Cache Serial & Pairing Token<br/>Display '☁️ Cloud Synced' Badge"]
+    HomeCloudCheck -->|"No (Unpaired)"| HomeBanner["Show 'Connect to Cloud' Banner<br/>1-Tap Account Creation & POST /api/cloud/pair"]
+
+    AwayCheck -->|"Yes (Cloud Paired)"| CloudPortal["☁️ AWAY FROM HOME: Open GRID-EMS-SERVER<br/>(https://ems.newenergygrid.com/client/dashboard)"]
+    AwayCheck -->|"No (Not Connected Yet)"| ProposeAccount["⚠️ AWAY & UNPAIRED: Propose Cloud Account<br/>1. Pre-register Pairing Token (POST /api/v1/device/register)<br/>2. Open Cloud Account Registration (/register)<br/>3. Queue Deferred Auto-Pairing for Home Wi-Fi Return"]
+    ProposeAccount -->|"User Returns to Home Wi-Fi"| AutoPair["⚡ Deferred Auto-Pairing Executes<br/>Calls POST /api/cloud/pair on Local GRID-EMS Automatically"]
+```
+
+---
+
+## ✨ Key Capabilities
+
+1. **Zero-Latency Local Edge Control (At Home)**
+   - Automatically discovers your `GRID-EMS` Raspberry Pi controller via mDNS (`gems.local` / `grid-ems.local`), saved LAN IP, or built-in subnet scanner (`8080`).
+   - Provides both a **Mobile Quick Dashboard** (live Solar PV, **Solis** battery storage SoC & strategy selector, 3-phase Grid Meter with Monthly Capacity Peak tracking, and **Raedian** EV wallbox charging mode control: `ECO`, `SOLAR`, `FAST`, `OFF`) and an **Embedded Local Portal** view.
+
+2. **Automatic Cloud Failover (Away from Home)**
+   - When your phone leaves your home Wi-Fi, the app automatically switches to **GRID-EMS-SERVER** (`https://ems.newenergygrid.com/client/dashboard` or your organization's white-label tenant portal `https://ems.newenergygrid.com/<tenant>/dashboard`).
+
+3. **One-Tap Cloud Account Proposal & Deferred Auto-Pairing**
+   - **When at home (unpaired):** Displays an onboarding prompt that calls `POST /api/cloud/pair` on the local `GRID-EMS` and opens the cloud registration page with your hardware `pairing_token` pre-filled.
+   - **When away from home (unpaired):** Proposes creating a `GRID-EMS-SERVER` account immediately, pre-registers the hardware `pairing_token` in the cloud (`POST /api/v1/device/register`), and queues a **Deferred Auto-Pairing** job that automatically pairs the local `GRID-EMS` the instant your phone reconnects to your home Wi-Fi.
+
+4. **Multilingual Interface (`EN`, `NL`, `FR`) & Dark/Light Theme**
+   - Full localization in **English**, **Nederlands**, and **Français**, matching `GRID-EMS` and `GRID-EMS-SERVER`.
+
+---
+
+## 📲 Installation Guide
+
+### Android (`GRID-EMS-v1.0.0-android.apk`)
+1. Download [`GRID-EMS-v1.0.0-android.apk`](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest/download/GRID-EMS-v1.0.0-android.apk) on your Android phone.
+2. Open the downloaded `.apk` file and allow installation from your browser/file manager if prompted.
+3. Launch **GRID-EMS** while connected to your home Wi-Fi to automatically discover your local `GRID-EMS` controller, or while away from home to connect to `GRID-EMS-SERVER`.
+
+### iOS (`GRID-EMS-v1.0.0-ios.ipa` or `GRID-EMS-v1.0.0-ios-xcode.zip`)
+* **Option A — Install via Sideloading (`GRID-EMS-v1.0.0-ios.ipa`):**
+  1. Download [`GRID-EMS-v1.0.0-ios.ipa`](https://github.com/webdotpulse/GRID-EMS-APP/releases/latest/download/GRID-EMS-v1.0.0-ios.ipa).
+  2. Install onto your iPhone or iPad using **AltStore**, **Sideloadly**, **Apple Configurator 2**, or your organization's MDM / Ad-Hoc provisioning profile.
+  3. On first launch, tap **Allow** when iOS asks for permission to find and connect to devices on your local network (`NSLocalNetworkUsageDescription`).
+* **Option B — Build & Run Directly via Xcode (`GRID-EMS-v1.0.0-ios-xcode.zip`):**
+  1. Extract `GRID-EMS-v1.0.0-ios-xcode.zip` (or clone this repository and run `npm run mobile:build`).
+  2. Open `ios/App/App.xcworkspace` in Xcode on macOS.
+  3. Select your Apple ID / Development Team under **Signing & Capabilities**, connect your iPhone, and press **Run (⌘R)**.
+
+---
+
+## 🛠️ Local Development & Build Commands
+
+### Prerequisites
+- **Node.js** `20+` or `22+`
+- **Android Studio** / Android SDK & JDK 21 (for local Android builds)
+- **Xcode 16+** & CocoaPods on macOS (for local iOS builds)
+
+### Commands
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
 
-# Run automated tests
+# 2. Run automated unit & integration tests (Vitest)
 npm test
 
-# Start development server
+# 3. Start local development server with hot reload
 npm run dev
 
-# Build production web bundle
-npm run build
+# 4. Build production web bundle & sync to native iOS + Android projects
+npm run mobile:build
 
-# Synchronize with iOS (Xcode) and Android (Android Studio)
-npm run cap:sync
-npm run cap:ios
-npm run cap:android
+# 5. Open native IDEs
+npm run cap:android   # Opens Android Studio
+npm run cap:ios       # Opens Xcode
 ```
+
+---
+
+## 🔒 Security & Brand Compliance
+
+**GRID-EMS-APP** is a proprietary software asset owned exclusively by **New Energy Grid** and **The Charge Grid**. All local network communications support LAN HTTP and local CA certificates, while all cloud communications with `ems.newenergygrid.com` strictly enforce HTTPS/TLS.

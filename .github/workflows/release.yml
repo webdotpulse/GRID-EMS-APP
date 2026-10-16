@@ -1,0 +1,192 @@
+name: Build & Release iOS & Android
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            TAG="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v1.0.0"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Dependencies, Test & Build Web Assets
+        run: |
+          npm ci
+          npm test
+          npm run build
+          npx cap sync android
+
+      - name: Build Android APK via Gradle
+        working-directory: ./android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Package Android Release Artifact
+        run: |
+          mkdir -p release-assets
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/GRID-EMS-${{ steps.meta.outputs.tag }}-android.apk"
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: release-assets/GRID-EMS-*-android.apk
+          retention-days: 5
+
+  build-ios:
+    name: Build iOS IPA & Xcode Archive
+    runs-on: macos-latest
+    needs: build-android
+    env:
+      RELEASE_TAG: ${{ needs.build-android.outputs.release_tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies & Sync Capacitor iOS
+        run: |
+          npm ci
+          npm run build
+          npx cap sync ios
+
+      - name: Archive Pre-Synced iOS Xcode Project
+        run: |
+          mkdir -p release-assets
+          zip -r -q "release-assets/GRID-EMS-${RELEASE_TAG}-ios-xcode.zip" ios/
+
+      - name: Build Unsigned iOS App Bundle (ARM64 iphoneos)
+        working-directory: ./ios/App
+        run: |
+          if [ -f "App.xcworkspace/contents.xcworkspacedata" ] && [ -d "Pods" ]; then
+            xcodebuild -workspace App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              AD_HOC_CODE_SIGNING_ALLOWED=YES \
+              build
+          else
+            xcodebuild -project App.xcodeproj \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              AD_HOC_CODE_SIGNING_ALLOWED=YES \
+              build
+          fi
+
+      - name: Package iOS .ipa Bundle
+        run: |
+          mkdir -p build_ipa/Payload
+          APP_PATH=$(find ios/App/build -name "App.app" -type d | head -n 1)
+          cp -R "$APP_PATH" build_ipa/Payload/App.app
+          cd build_ipa
+          zip -r -q "../release-assets/GRID-EMS-${RELEASE_TAG}-ios.ipa" Payload
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: |
+            release-assets/GRID-EMS-*-ios.ipa
+            release-assets/GRID-EMS-*-ios-xcode.zip
+          retention-days: 5
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios]
+    env:
+      RELEASE_TAG: ${{ needs.build-android.outputs.release_tag }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release
+          path: release-assets/
+
+      - name: Download iOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-release
+          path: release-assets/
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd release-assets
+          sha256sum GRID-EMS-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create & Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: GRID-EMS Mobile App ${{ env.RELEASE_TAG }} (Android APK & iOS IPA)
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/GRID-EMS-${{ env.RELEASE_TAG }}-android.apk
+            release-assets/GRID-EMS-${{ env.RELEASE_TAG }}-ios.ipa
+            release-assets/GRID-EMS-${{ env.RELEASE_TAG }}-ios-xcode.zip
+            release-assets/SHA256SUMS
+            CHANGELOG.md
