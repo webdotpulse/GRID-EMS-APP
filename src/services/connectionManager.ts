@@ -555,32 +555,36 @@ export async function pairOrQueueCloudAccount(params: {
   setStored(STORAGE_KEYS.PAIRING_TOKEN, pairingToken)
   setStored(STORAGE_KEYS.SERIAL_NUMBER, serialNumber)
 
-  // 1. Pre-register the hardware unit & pairing token on GRID-EMS-SERVER (`POST /api/v1/device/register`)
-  // so that `AuthController@register` immediately recognizes `pairing_token` when the user creates their account.
-  const cloudRegRes = await httpRequestJson(`${serverUrl}/api/v1/device/register`, {
-    method: 'POST',
-    body: {
-      serial_number: serialNumber,
-      pairing_token: pairingToken,
-      model: 'GEMS v9.4 Pro',
-      firmware_version: 'v9.4.2',
-      ip_local: connectionState.systemInfo?.ip || connectionState.localHost,
-    },
-    timeoutMs: 4000,
-  })
+  let preRegisteredOk = true
+  if (connectionState.simulationScenario === 'auto') {
+    const cloudRegRes = await httpRequestJson(`${serverUrl}/api/v1/device/register`, {
+      method: 'POST',
+      body: {
+        serial_number: serialNumber,
+        pairing_token: pairingToken,
+        model: 'GEMS v9.4 Pro',
+        firmware_version: 'v9.4.2',
+        ip_local: connectionState.systemInfo?.ip || connectionState.localHost,
+      },
+      timeoutMs: 4000,
+    })
+    preRegisteredOk = cloudRegRes.ok
+  }
 
   // 2. If the user is currently AT HOME, also call `POST /api/cloud/pair` on the local GRID-EMS immediately!
   if (connectionState.isAtHome) {
-    const baseUrl = getLocalBaseUrl()
-    await httpRequestJson(`${baseUrl}/api/cloud/pair`, {
-      method: 'POST',
-      body: {
-        server_url: serverUrl,
-        pairing_token: pairingToken,
-        serial_number: serialNumber,
-      },
-      timeoutMs: 4500,
-    })
+    if (connectionState.simulationScenario === 'auto') {
+      const baseUrl = getLocalBaseUrl()
+      await httpRequestJson(`${baseUrl}/api/cloud/pair`, {
+        method: 'POST',
+        body: {
+          server_url: serverUrl,
+          pairing_token: pairingToken,
+          serial_number: serialNumber,
+        },
+        timeoutMs: 4500,
+      })
+    }
 
     connectionState.isCloudPaired = true
     setStored(STORAGE_KEYS.CLOUD_PAIRED, 'true')
@@ -610,7 +614,7 @@ export async function pairOrQueueCloudAccount(params: {
     accountName: params.accountName,
     accountEmail: params.accountEmail,
     queuedAt: new Date().toISOString(),
-    preRegisteredOnCloud: cloudRegRes.ok,
+    preRegisteredOnCloud: preRegisteredOk,
   }
   connectionState.pendingPairingJob = job
   setStored(STORAGE_KEYS.PENDING_PAIRING, JSON.stringify(job))
